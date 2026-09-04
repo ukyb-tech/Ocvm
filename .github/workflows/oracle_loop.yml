@@ -42,7 +42,7 @@ jobs:
         run: |
                echo "Initiating Oracle Resource Manager Stack request..."
     
-               # Verify OCI CLI is installed and accessible
+               # Verify OCI CLI is installed and accessible.
                if ! command -v oci &> /dev/null; then
                echo "ERROR: OCI CLI not found in PATH"
                exit 1
