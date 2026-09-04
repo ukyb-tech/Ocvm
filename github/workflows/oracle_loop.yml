@@ -2,8 +2,8 @@ name: Oracle Free Tier Loop
 
 on:
   schedule:
-    - cron: '*/5 * * * *' # Loops entirely for free on your public repo
-  workflow_dispatch: # Allows manual play triggers
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
 
 jobs:
   attempt-launch:
@@ -42,7 +42,6 @@ jobs:
           echo "Initiating Oracle Resource Manager Stack request..."
           OUTPUT=$(/home/runner/bin/oci resource-manager job create-apply-job --execution-plan-strategy AUTO_APPROVED --stack-id "$STACK_ID" 2>&1)
           
-          # This masks the output text automatically in logs for privacy
           echo "Raw Oracle API Response processed securely."
           
           if [[ "$OUTPUT" == *"ACCEPTED"* || "$OUTPUT" == *"lifecycle-state"* ]]; then
