@@ -38,7 +38,7 @@ jobs:
 
       - name: Send VM Creation Request to London
         env:
-         STACK_ID: "ocid1.ormstack.oc1.uk-london-1.amaaaaaahcaqj4aakdxme6ti3oeagisif2rhbtjrabk22n4dbbgttu5jpyta"
+          STACK_ID: "ocid1.ormstack.oc1.uk-london-1.amaaaaaahcaqj4aakdxme6ti3oeagisif2rhbtjrabk22n4dbbgttu5jpyta"
         run: |
                echo "Initiating Oracle Resource Manager Stack request..."
     
