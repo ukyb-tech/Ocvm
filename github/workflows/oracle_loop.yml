@@ -1,0 +1,54 @@
+name: Oracle Free Tier Loop
+
+on:
+  schedule:
+    - cron: '*/5 * * * *' # Loops entirely for free on your public repo
+  workflow_dispatch: # Allows manual play triggers
+
+jobs:
+  attempt-launch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository code
+        uses: actions/checkout@v4
+
+      - name: Set up OCI CLI Configuration
+        run: |
+          mkdir -p ~/.oci
+          cat <<EOF > ~/.oci/config
+          [DEFAULT]
+          user=${{ secrets.OCI_USER_OCID }}
+          fingerprint=${{ secrets.OCI_FINGERPRINT }}
+          tenancy=${{ secrets.OCI_TENANCY_OCID }}
+          region=${{ secrets.OCI_REGION }}
+          key_file=~/.oci/oci_api_key.pem
+          EOF
+          
+          echo "${{ secrets.OCI_PRIVATE_KEY }}" > ~/.oci/oci_api_key.pem
+          chmod 600 ~/.oci/oci_api_key.pem
+          chmod 600 ~/.oci/config
+
+      - name: Install Oracle Cloud Infrastructure CLI
+        run: |
+          curl -L -O https://githubusercontent.com
+          chmod +x install.sh
+          ./install.sh --accept-all-defaults
+          echo "/home/runner/bin" >> $GITHUB_PATH
+
+      - name: Send VM Creation Request to London
+        env:
+          STACK_ID: "ocid1.ormstack.oc1.uk-london-1.amaaaaaahcaqj4aakdxme6ti3oeagisif2rhbtjrabk22n4dbbgttu5jpyta"
+        run: |
+          echo "Initiating Oracle Resource Manager Stack request..."
+          OUTPUT=$(/home/runner/bin/oci resource-manager job create-apply-job --execution-plan-strategy AUTO_APPROVED --stack-id "$STACK_ID" 2>&1)
+          
+          # This masks the output text automatically in logs for privacy
+          echo "Raw Oracle API Response processed securely."
+          
+          if [[ "$OUTPUT" == *"ACCEPTED"* || "$OUTPUT" == *"lifecycle-state"* ]]; then
+             echo "SUCCESS: Request registered by Oracle Resource Manager!"
+          else
+             echo "FAIL: API endpoint did not accept the token. Check configuration parameters."
+             exit 1
+          fi
+          
