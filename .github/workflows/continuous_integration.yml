@@ -1,0 +1,109 @@
+name: Continuous Integration
+
+on:
+  workflow_call: # Kept from your original setup
+  repository_dispatch:
+    types: [compile-private-pr]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: { platform: linux, arch: x86_64, os: ubuntu-22.04 }
+            target-type: template_debug
+            float-precision: double
+          - target: { platform: macos, arch: universal, os: macos-latest }
+            target-type: template_debug
+            float-precision: single
+
+    runs-on: ${{ matrix.target.os }}
+    steps:
+      # 1. Update the Private PR to a spinning "Pending" yellow circle status
+      - name: Set PR Status to Pending
+        if: github.event_name == 'repository_dispatch'
+        run: |
+          curl -X POST \
+            -H "Authorization: token ${{ secrets.CROSS_REPO_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            https://github.com{{ github.event.client_payload.sha }} \
+            -d '{"state": "pending", "description": "Public CI is building...", "context": "Public-GDExtension-Compiler"}'
+
+      # 2. Checkout Ocvm (to grab godot-cpp cache systems & template configs)
+      - name: Checkout Ocvm Template
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      # 3. Checkout the private source code into a subfolder named 'src'
+      - name: Checkout Private Source Code
+        if: github.event_name == 'repository_dispatch'
+        uses: actions/checkout@v4
+        with:
+          repository: ukyb-tech/Beylik_v1
+          token: ${{ secrets.CROSS_REPO_TOKEN }}
+          ref: ${{ github.event.client_payload.ref }}
+          path: src # Forces it to overwrite/populate the compiler's expected source folder
+
+      # 4. Multilib support (Kept from original config)
+      - name: Install multilib support
+        if: ${{ matrix.target.platform == 'linux' && matrix.target.arch == 'x86_32' }}
+        run: |
+          sudo apt-get update && sudo apt-get install -y gcc-multilib g++-multilib
+
+      # 5. Setup dependencies (Kept from original config)
+      - name: Setup godot-cpp
+        uses: ./godot-cpp/.github/actions/setup-godot-cpp
+        with:
+          platform: ${{ matrix.target.platform }}
+          em-version: 3.1.62
+
+      # 6. Scons Cache Management (Kept from original config)
+      - name: Restore .scons_cache
+        uses: ./godot-cpp/.github/actions/godot-cache-restore
+        with:
+          scons-cache: ${{ github.workspace }}/.scons-cache/
+          cache-name: ${{ matrix.target.platform }}_${{ matrix.target.arch }}_${{ matrix.float-precision }}_${{ matrix.target-type }}
+
+      # 7. Compile GDExtension
+      - name: Build GDExtension Debug Build
+        shell: sh
+        env:
+          SCONS_CACHE: ${{ github.workspace }}/.scons-cache/
+        run: |
+          scons target=${{ matrix.target-type }} platform=${{ matrix.target.platform }} arch=${{ matrix.target.arch }} precision=${{ matrix.float-precision }}
+
+      # 8. Save Scons Cache (Kept from original config)
+      - name: Save .scons_cache
+        uses: ./godot-cpp/.github/actions/godot-cache-save
+        with:
+          scons-cache: ${{ github.workspace }}/.scons-cache/
+          cache-name: ${{ matrix.target.platform }}_${{ matrix.target.arch }}_${{ matrix.float-precision }}_${{ matrix.target-type }}
+
+      # 9. Upload Artifacts (This creates an accessible link for logs & binaries in the public repo actions tab)
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: gdextension-binaries-${{ matrix.target.platform }}
+          path: bin/ # Assumes SCons outputs binaries into a bin/ folder
+
+      # 10. Update Status on Success
+      - name: Set PR Status to Success
+        if: ${{ success() && github.event_name == 'repository_dispatch' }}
+        run: |
+          curl -X POST \
+            -H "Authorization: token ${{ secrets.CROSS_REPO_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            https://github.com{{ github.event.client_payload.sha }} \
+            -d '{"state": "success", "description": "Compilation passed! Check Ocvm Actions tab for logs.", "context": "Public-GDExtension-Compiler", "target_url": "https://github.com"}'
+
+      # 11. Update Status on Failure
+      - name: Set PR Status to Failure
+        if: ${{ failure() && github.event_name == 'repository_dispatch' }}
+        run: |
+          curl -X POST \
+            -H "Authorization: token ${{ secrets.CROSS_REPO_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            https://github.com{{ github.event.client_payload.sha }} \
+            -d '{"state": "failure", "description": "Compilation failed. Click details for logs.", "context": "Public-GDExtension-Compiler", "target_url": "https://github.com"}'
