@@ -1,3 +1,23 @@
+# ============================================================
+#  TEMPORARY HANDOFF FILE — apply to the PUBLIC repo, then delete
+# ============================================================
+#  Paste the ENTIRE content below into:
+#    github.com/ukyb-tech/Ocvm  →  .github/workflows/continuous_integration.yml
+#  (Actions tab → workflow file → edit, or the file browser → edit pencil)
+#  It REPLACES the current broken file (whose report-status lines end in
+#  literal "[...]" text, causing "unexpected EOF while looking for matching `'`"
+#  and a status that stays "pending" forever).
+#
+#  Why this version is fixed (vs. what's on Ocvm now):
+#   1. report-status runs with `if: always()` and keys off needs.build.result —
+#      it was being skipped on failures, so Beylik_v1 never learned the result.
+#   2. curl now uses --fail, so a bad status API call fails loudly instead of
+#      silently doing nothing.
+#   3. The build checks out the EXACT client-payload sha after checkout, so a
+#      branch moving mid-dispatch can't compile the wrong code.
+#   4. The success/failure JSON is fully written out (no truncated URLs).
+# ============================================================
+
 name: Continuous Integration
 
 on:
@@ -12,11 +32,11 @@ jobs:
     steps:
       - name: Set PR Status to Pending
         run: |
-          curl -X POST \
+          curl --fail -X POST \
             -H "Authorization: token ${{ secrets.CROSS_REPO_TOKEN }}" \
             -H "Accept: application/vnd.github.v3+json" \
             https://api.github.com/repos/ukyb-tech/Beylik_v1/statuses/${{ github.event.client_payload.sha }} \
-            -d '{"state": "pending", "description": "Public CI is building...", "context": "Public-GDExtension-Compiler"}'
+            -d '{"state": "pending", "description": "Public CI is building...", "context": "Public-GDExtension-Compiler", "target_url": "https://github.com/ukyb-tech/Ocvm/actions/runs/${{ github.run_id }}"}'
 
   build:
     needs: notify-pending
@@ -33,7 +53,7 @@ jobs:
 
     runs-on: ${{ matrix.target.os }}
     steps:
-       
+
       # 1. Checkout Beylik_v1 (the private source code)
       - name: Checkout Beylik_v1 Source Code
         if: github.event_name == 'repository_dispatch'
@@ -43,6 +63,13 @@ jobs:
           token: ${{ secrets.CROSS_REPO_TOKEN }}
           ref: ${{ github.event.client_payload.ref }}
           submodules: recursive
+
+      # 1b. Pin the EXACT commit that was requested — if the branch moved between
+      #     the dispatch and this checkout, we must still compile the right code.
+      - name: Pin exact commit sha
+        if: github.event_name == 'repository_dispatch' && github.event.client_payload.sha != ''
+        run: |
+          git checkout ${{ github.event.client_payload.sha }}
 
       # 2. Multilib support
       - name: Install multilib support
@@ -87,24 +114,28 @@ jobs:
           path: bin/
 
   report-status:
-    if: github.event_name == 'repository_dispatch'
+    # CRITICAL: must run even when the build fails — otherwise Beylik_v1 never
+    # learns the result and its mirror workflow hangs red. always() guarantees it.
+    if: ${{ always() && github.event_name == 'repository_dispatch' }}
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - name: Set PR Status to Success
-        if: ${{ success() }}
+      - name: Report Final Status to Beylik_v1
+        env:
+          BUILD_RESULT: ${{ needs.build.result }}
+          SHA: ${{ github.event.client_payload.sha }}
+          RUN_ID: ${{ github.run_id }}
         run: |
-          curl -X POST \
+          # Translate the matrix result into a GitHub commit status for the private repo
+          if [ "$BUILD_RESULT" = "success" ]; then
+            STATE="success"
+            DESC="Compilation passed on public CI"
+          else
+            STATE="failure"
+            DESC="Compilation failed on public CI (result: $BUILD_RESULT)"
+          fi
+          curl --fail -X POST \
             -H "Authorization: token ${{ secrets.CROSS_REPO_TOKEN }}" \
             -H "Accept: application/vnd.github.v3+json" \
-            https://api.github.com/repos/ukyb-tech/Beylik_v1/statuses/${{ github.event.client_payload.sha }} \
-            -d '{"state": "success", "description": "Compilation passed! Check Ocvm Actions tab for logs.", "context": "Public-GDExtension-Compiler", "target_url": "https://github.com/ukyb-tech/O[...]
-
-      - name: Set PR Status to Failure
-        if: ${{ failure() }}
-        run: |
-          curl -X POST \
-            -H "Authorization: token ${{ secrets.CROSS_REPO_TOKEN }}" \
-            -H "Accept: application/vnd.github.v3+json" \
-            https://api.github.com/repos/ukyb-tech/Beylik_v1/statuses/${{ github.event.client_payload.sha }} \
-            -d '{"state": "failure", "description": "Compilation failed. Click details for logs.", "context": "Public-GDExtension-Compiler", "target_url": "https://github.com/ukyb-tech/Ocvm/actio[...]
+            "https://api.github.com/repos/ukyb-tech/Beylik_v1/statuses/$SHA" \
+            -d "{\"state\": \"$STATE\", \"description\": \"$DESC\", \"context\": \"Public-GDExtension-Compiler\", \"target_url\": \"https://github.com/ukyb-tech/Ocvm/actions/runs/$RUN_ID\"}"
