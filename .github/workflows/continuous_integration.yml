@@ -1,21 +1,10 @@
 # ============================================================
 #  TEMPORARY HANDOFF FILE — apply to the PUBLIC repo, then delete
 # ============================================================
-#  Paste the ENTIRE content below into:
+#  Paste this ENTIRE content into:
 #    github.com/ukyb-tech/Ocvm  →  .github/workflows/continuous_integration.yml
-#  (Actions tab → workflow file → edit, or the file browser → edit pencil)
-#  It REPLACES the current broken file (whose report-status lines end in
-#  literal "[...]" text, causing "unexpected EOF while looking for matching `'`"
-#  and a status that stays "pending" forever).
-#
-#  Why this version is fixed (vs. what's on Ocvm now):
-#   1. report-status runs with `if: always()` and keys off needs.build.result —
-#      it was being skipped on failures, so Beylik_v1 never learned the result.
-#   2. curl now uses --fail, so a bad status API call fails loudly instead of
-#      silently doing nothing.
-#   3. The build checks out the EXACT client-payload sha after checkout, so a
-#      branch moving mid-dispatch can't compile the wrong code.
-#   4. The success/failure JSON is fully written out (no truncated URLs).
+#  (REPLACES the current file — adds android arm64, web wasm32 and windows x86_64
+#   to the build matrix; everything else is the already-fixed version.)
 # ============================================================
 
 name: Continuous Integration
@@ -49,6 +38,15 @@ jobs:
             float-precision: double
           - target: { platform: macos, arch: universal, os: macos-latest }
             target-type: template_debug
+            float-precision: single
+          - target: { platform: android, arch: arm64, os: ubuntu-22.04 }
+            target-type: template_debug
+            float-precision: single
+          - target: { platform: web, arch: wasm32, os: ubuntu-22.04 }
+            target-type: template_release
+            float-precision: double
+          - target: { platform: windows, arch: x86_64, os: windows-latest }
+            target-type: template_release
             float-precision: single
 
     runs-on: ${{ matrix.target.os }}
