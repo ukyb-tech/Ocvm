@@ -1,0 +1,162 @@
+# ============================================================
+#  TEMPORARY HANDOFF FILE — apply to the PUBLIC repo, then delete
+# ============================================================
+#  Paste this ENTIRE content into:
+#    github.com/ukyb-tech/Ocvm  →  .github/workflows/make_full_build.yml
+#  (NEW file — the full all-platform build, dispatched by Beylik_v1's
+#   "Cross-Repo Full Build (make_build)" workflow via repository_dispatch
+#   event-type `make-full-build`. Mirrors the old make_build_old.yml matrix.)
+# ============================================================
+
+name: Make Full Build
+
+on:
+  repository_dispatch:
+    types: [make-full-build]
+
+jobs:
+  notify-pending:
+    if: github.event_name == 'repository_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set Full Build Status to Pending
+        run: |
+          curl --fail -X POST \
+            -H "Authorization: token ${{ secrets.CROSS_REPO_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            https://api.github.com/repos/ukyb-tech/Beylik_v1/statuses/${{ github.event.client_payload.sha }} \
+            -d '{"state": "pending", "description": "Public full build is running...", "context": "Public-Full-Compiler", "target_url": "https://github.com/ukyb-tech/Ocvm/actions/runs/${{ github.run_id }}"}'
+
+  build:
+    needs: notify-pending
+    strategy:
+      fail-fast: false
+      matrix:
+        # Every platform/arch combination, debug + release, single precision
+        target:
+          [
+            { platform: linux, arch: x86_64, os: ubuntu-22.04 },
+            { platform: linux, arch: x86_32, os: ubuntu-22.04 },
+            { platform: linux, arch: arm64, os: ubuntu-22.04-arm },
+            { platform: linux, arch: arm32, os: ubuntu-22.04-arm },
+            { platform: windows, arch: x86_64, os: windows-latest },
+            { platform: windows, arch: x86_32, os: windows-latest },
+            { platform: windows, arch: arm64, os: windows-latest },
+            { platform: macos, arch: universal, os: macos-latest },
+            { platform: android, arch: x86_64, os: ubuntu-22.04 },
+            { platform: android, arch: x86_32, os: ubuntu-22.04 },
+            { platform: android, arch: arm64, os: ubuntu-22.04 },
+            { platform: android, arch: arm32, os: ubuntu-22.04 },
+            { platform: ios, arch: arm64, os: macos-latest },
+            { platform: web, arch: wasm32, os: ubuntu-22.04 },
+          ]
+        target-type: [template_debug, template_release]
+        float-precision: [single]
+
+    runs-on: ${{ matrix.target.os }}
+    steps:
+
+      # 1. Checkout Beylik_v1 (the private source code)
+      - name: Checkout Beylik_v1 Source Code
+        if: github.event_name == 'repository_dispatch'
+        uses: actions/checkout@v4
+        with:
+          repository: ukyb-tech/Beylik_v1
+          token: ${{ secrets.CROSS_REPO_TOKEN }}
+          ref: ${{ github.event.client_payload.ref }}
+          submodules: recursive
+
+      # 1b. Pin the EXACT commit that was requested
+      - name: Pin exact commit sha
+        if: github.event_name == 'repository_dispatch' && github.event.client_payload.sha != ''
+        run: |
+          git checkout ${{ github.event.client_payload.sha }}
+
+      # 2. Multilib support
+      - name: Install multilib support
+        if: ${{ matrix.target.platform == 'linux' && matrix.target.arch == 'x86_32' }}
+        run: |
+          sudo apt-get update && sudo apt-get install -y gcc-multilib g++-multilib
+
+      # 3. Setup dependencies (using actions from beylik_v1)
+      - name: Setup godot-cpp
+        uses: ./godot-cpp/.github/actions/setup-godot-cpp
+        with:
+          platform: ${{ matrix.target.platform }}
+          em-version: 3.1.62
+
+      # 4. Scons Cache Management
+      - name: Restore .scons_cache
+        uses: ./godot-cpp/.github/actions/godot-cache-restore
+        with:
+          scons-cache: ${{ github.workspace }}/.scons-cache/
+          cache-name: ${{ matrix.target.platform }}_${{ matrix.target.arch }}_${{ matrix.float-precision }}_${{ matrix.target-type }}
+
+      # 5. Compile GDExtension
+      - name: Build GDExtension Debug Build
+        shell: sh
+        env:
+          SCONS_CACHE: ${{ github.workspace }}/.scons-cache/
+        run: |
+          scons target=${{ matrix.target-type }} platform=${{ matrix.target.platform }} arch=${{ matrix.target.arch }} precision=${{ matrix.float-precision }}
+
+      # 6. Save Scons Cache
+      - name: Save .scons_cache
+        uses: ./godot-cpp/.github/actions/godot-cache-save
+        with:
+          scons-cache: ${{ github.workspace }}/.scons-cache/
+          cache-name: ${{ matrix.target.platform }}_${{ matrix.target.arch }}_${{ matrix.float-precision }}_${{ matrix.target-type }}
+
+      # 7. Windows: strip import libraries / PDBs from the artifact
+      - name: Windows - Delete compilation files
+        if: ${{ matrix.target.platform == 'windows' }}
+        shell: pwsh
+        run: |
+          Remove-Item bin/* -Include *.exp,*.lib,*.pdb -Force
+
+      # 8. Upload per-target artifact (merged into `godot-cpp-template` below)
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: godot-cpp-template-${{ matrix.target.platform }}-${{ matrix.target.arch }}-${{ matrix.float-precision }}-${{ matrix.target-type }}
+          path: |
+            ${{ github.workspace }}/bin/**
+
+  # Merges all the build artifacts together into a single godot-cpp-template artifact
+  merge:
+    needs: build
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Merge Artifacts
+        uses: actions/upload-artifact/merge@v4
+        with:
+          name: godot-cpp-template
+          pattern: godot-cpp-template-*
+          delete-merged: true
+
+  report-status:
+    # CRITICAL: must run even when the build fails — otherwise Beylik_v1 never
+    # learns the result and its mirror workflow hangs red. always() guarantees it.
+    if: ${{ always() && github.event_name == 'repository_dispatch' }}
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report Final Status to Beylik_v1
+        env:
+          BUILD_RESULT: ${{ needs.build.result }}
+          SHA: ${{ github.event.client_payload.sha }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          # Translate the matrix result into a GitHub commit status for the private repo
+          if [ "$BUILD_RESULT" = "success" ]; then
+            STATE="success"
+            DESC="Full build passed on public CI"
+          else
+            STATE="failure"
+            DESC="Full build failed on public CI (result: $BUILD_RESULT)"
+          fi
+          curl --fail -X POST \
+            -H "Authorization: token ${{ secrets.CROSS_REPO_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/ukyb-tech/Beylik_v1/statuses/$SHA" \
+            -d "{\"state\": \"$STATE\", \"description\": \"$DESC\", \"context\": \"Public-Full-Compiler\", \"target_url\": \"https://github.com/ukyb-tech/Ocvm/actions/runs/$RUN_ID\"}"
