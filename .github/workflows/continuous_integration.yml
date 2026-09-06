@@ -27,9 +27,9 @@ jobs:
           curl -X POST \
             -H "Authorization: token ${{ secrets.CROSS_REPO_TOKEN }}" \
             -H "Accept: application/vnd.github.v3+json" \
-            https://github.com{{ github.event.client_payload.sha }} \
+            https://api.github.com/repos/ukyb-tech/Beylik_v1/statuses/${{ github.event.client_payload.sha }} \
             -d '{"state": "pending", "description": "Public CI is building...", "context": "Public-GDExtension-Compiler"}'
-
+    
       # 2. Checkout Ocvm (to grab godot-cpp cache systems & template configs)
       - name: Checkout Ocvm Template
         uses: actions/checkout@v4
@@ -95,8 +95,8 @@ jobs:
           curl -X POST \
             -H "Authorization: token ${{ secrets.CROSS_REPO_TOKEN }}" \
             -H "Accept: application/vnd.github.v3+json" \
-            https://github.com{{ github.event.client_payload.sha }} \
-            -d '{"state": "success", "description": "Compilation passed! Check Ocvm Actions tab for logs.", "context": "Public-GDExtension-Compiler", "target_url": "https://github.com"}'
+            https://api.github.com/repos/ukyb-tech/Beylik_v1/statuses/${{ github.event.client_payload.sha }} \
+            -d '{"state": "success", "description": "Compilation passed! Check Ocvm Actions tab for logs.", "context": "Public-GDExtension-Compiler", "target_url": "https://github.com/ukyb-tech/Ocvm/actions/runs/${{ github.run_id }}"}'
 
       # 11. Update Status on Failure
       - name: Set PR Status to Failure
@@ -105,5 +105,5 @@ jobs:
           curl -X POST \
             -H "Authorization: token ${{ secrets.CROSS_REPO_TOKEN }}" \
             -H "Accept: application/vnd.github.v3+json" \
-            https://github.com{{ github.event.client_payload.sha }} \
-            -d '{"state": "failure", "description": "Compilation failed. Click details for logs.", "context": "Public-GDExtension-Compiler", "target_url": "https://github.com"}'
+            https://api.github.com/repos/ukyb-tech/Beylik_v1/statuses/${{ github.event.client_payload.sha }} \
+            -d '{"state": "failure", "description": "Compilation failed. Click details for logs.", "context": "Public-GDExtension-Compiler", "target_url": "https://github.com/ukyb-tech/Ocvm/actions/runs/${{ github.run_id }}"}'
