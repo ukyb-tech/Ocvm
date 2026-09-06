@@ -6,7 +6,6 @@ on:
     types: [compile-private-pr]
 
 jobs:
-  # New: Separate job to set pending status immediately
   notify-pending:
     if: github.event_name == 'repository_dispatch'
     runs-on: ubuntu-latest
@@ -20,7 +19,7 @@ jobs:
             -d '{"state": "pending", "description": "Public CI is building...", "context": "Public-GDExtension-Compiler"}'
 
   build:
-    needs: notify-pending  # Wait for pending status to be set
+    needs: notify-pending
     strategy:
       fail-fast: false
       matrix:
@@ -34,45 +33,38 @@ jobs:
 
     runs-on: ${{ matrix.target.os }}
     steps:
-      # Remove the "Set PR Status to Pending" step from here
-      
-      # 1. Checkout Ocvm (to grab godot-cpp cache systems & template configs)
-      - name: Checkout Ocvm Template
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive  # Fix: use 'recursive' instead of 'true'
-
-      # 2. Checkout the private source code into a subfolder named 'src'
-      - name: Checkout Private Source Code
+       
+      # 1. Checkout Beylik_v1 (the private source code)
+      - name: Checkout Beylik_v1 Source Code
         if: github.event_name == 'repository_dispatch'
         uses: actions/checkout@v4
         with:
           repository: ukyb-tech/Beylik_v1
           token: ${{ secrets.CROSS_REPO_TOKEN }}
           ref: ${{ github.event.client_payload.ref }}
-          path: src
+          submodules: recursive
 
-      # 3. Multilib support
+      # 2. Multilib support
       - name: Install multilib support
         if: ${{ matrix.target.platform == 'linux' && matrix.target.arch == 'x86_32' }}
         run: |
           sudo apt-get update && sudo apt-get install -y gcc-multilib g++-multilib
 
-      # 4. Setup dependencies
+      # 3. Setup dependencies (using actions from beylik_v1)
       - name: Setup godot-cpp
         uses: ./godot-cpp/.github/actions/setup-godot-cpp
         with:
           platform: ${{ matrix.target.platform }}
           em-version: 3.1.62
 
-      # 5. Scons Cache Management
+      # 4. Scons Cache Management
       - name: Restore .scons_cache
         uses: ./godot-cpp/.github/actions/godot-cache-restore
         with:
           scons-cache: ${{ github.workspace }}/.scons-cache/
           cache-name: ${{ matrix.target.platform }}_${{ matrix.target.arch }}_${{ matrix.float-precision }}_${{ matrix.target-type }}
 
-      # 6. Compile GDExtension
+      # 5. Compile GDExtension
       - name: Build GDExtension Debug Build
         shell: sh
         env:
@@ -80,21 +72,20 @@ jobs:
         run: |
           scons target=${{ matrix.target-type }} platform=${{ matrix.target.platform }} arch=${{ matrix.target.arch }} precision=${{ matrix.float-precision }}
 
-      # 7. Save Scons Cache
+      # 6. Save Scons Cache
       - name: Save .scons_cache
         uses: ./godot-cpp/.github/actions/godot-cache-save
         with:
           scons-cache: ${{ github.workspace }}/.scons-cache/
           cache-name: ${{ matrix.target.platform }}_${{ matrix.target.arch }}_${{ matrix.float-precision }}_${{ matrix.target-type }}
 
-      # 8. Upload Artifacts
+      # 7. Upload Artifacts
       - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: gdextension-binaries-${{ matrix.target.platform }}
           path: bin/
 
-  # New: Final status job that reports after all builds complete
   report-status:
     if: github.event_name == 'repository_dispatch'
     needs: build
@@ -107,7 +98,7 @@ jobs:
             -H "Authorization: token ${{ secrets.CROSS_REPO_TOKEN }}" \
             -H "Accept: application/vnd.github.v3+json" \
             https://api.github.com/repos/ukyb-tech/Beylik_v1/statuses/${{ github.event.client_payload.sha }} \
-            -d '{"state": "success", "description": "Compilation passed! Check Ocvm Actions tab for logs.", "context": "Public-GDExtension-Compiler", "target_url": "https://github.com/ukyb-tech/Ocvm/actions/runs/${{ github.run_id }}"}'
+            -d '{"state": "success", "description": "Compilation passed! Check Ocvm Actions tab for logs.", "context": "Public-GDExtension-Compiler", "target_url": "https://github.com/ukyb-tech/O[...]
 
       - name: Set PR Status to Failure
         if: ${{ failure() }}
@@ -116,4 +107,4 @@ jobs:
             -H "Authorization: token ${{ secrets.CROSS_REPO_TOKEN }}" \
             -H "Accept: application/vnd.github.v3+json" \
             https://api.github.com/repos/ukyb-tech/Beylik_v1/statuses/${{ github.event.client_payload.sha }} \
-            -d '{"state": "failure", "description": "Compilation failed. Click details for logs.", "context": "Public-GDExtension-Compiler", "target_url": "https://github.com/ukyb-tech/Ocvm/actions/runs/${{ github.run_id }}"}'
+            -d '{"state": "failure", "description": "Compilation failed. Click details for logs.", "context": "Public-GDExtension-Compiler", "target_url": "https://github.com/ukyb-tech/Ocvm/actio[...]
