@@ -15,20 +15,20 @@ jobs:
       - name: Install Python + libraries
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3 python3-pip
-          pip install numpy scipy rasterio shapely trimesh pyyaml pillow requests
+          sudo apt-get install -y python3 python3-pip gdal-bin
+          pip install numpy rasterio pillow shapely trimesh pyyaml requests
 
-      # 1. Download AWS Terrain-RGB tiles
+      # 1. Download Copernicus DEM tiles (tile-based)
       - name: Download Copernicus DEM tiles
         run: |
-         python scripts/download_dem_copernicus.py
+          python scripts/download_dem_copernicus.py
 
-      # 2. Decode Terrain-RGB → heightmaps
-      - name: Decode DEM to heightmaps
+      # 2. Decode each DEM tile → heightmap tile
+      - name: Decode Copernicus DEM tiles to heightmaps
         run: |
-          python scripts/decode_dem_to_height.py
+          python scripts/decode_dem_copernicus_tiles.py
 
-      # 3. Generate TIN geometry
+      # 3. Generate TIN geometry per tile
       - name: Generate TIN geometry
         run: |
           python scripts/build_tin.py
@@ -38,50 +38,46 @@ jobs:
         run: |
           python scripts/downsample_grid.py --grid-size 32
 
-      # 5. Compute flat / river / sea flags
+      # 5. Compute terrain flags
       - name: Compute terrain flags
         run: |
           python scripts/compute_flags.py
 
-      # ⭐ NEW STEP — replaces WorldPainter
+      # 6. Generate terrain layers (replaces WorldPainter)
       - name: Generate terrain layers
         run: |
           python scripts/generate_terrain_layers.py
 
-      # ⭐ NEW ARTIFACT — replaces WorldPainter inputs
-      - name: Upload terrain layers
-        uses: actions/upload-artifact@v4
-        with:
-          name: terrain-layers
-          path: output/layers/
-
-      # Upload heightmaps (optional but useful)
+      # Upload artifacts
       - name: Upload heightmaps
         uses: actions/upload-artifact@v4
         with:
           name: heightmaps
           path: output/heightmaps/
 
-      # Upload TIN geometry
       - name: Upload TIN geometry
         uses: actions/upload-artifact@v4
         with:
           name: tin
           path: output/tin/
 
-      # Upload low-res grids
       - name: Upload low-res grids
         uses: actions/upload-artifact@v4
         with:
           name: grids
           path: output/grids_lowres/
 
-      # Upload flags
       - name: Upload flags
         uses: actions/upload-artifact@v4
         with:
           name: flags
           path: output/flags/
+
+      - name: Upload terrain layers
+        uses: actions/upload-artifact@v4
+        with:
+          name: terrain-layers
+          path: output/layers/
 
   terrain-finalize:
     runs-on: ubuntu-latest
@@ -95,49 +91,44 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y python3 python3-pip
-          pip install numpy scipy trimesh pyyaml pillow
+          pip install numpy pillow trimesh pyyaml
 
-      # Download terrain layers (optional for engine packaging)
-      - name: Download terrain layers
-        uses: actions/download-artifact@v4
-        with:
-          name: terrain-layers
-          path: output/layers/
-
-      # Download heightmaps
+      # Download artifacts
       - name: Download heightmaps
         uses: actions/download-artifact@v4
         with:
           name: heightmaps
           path: output/heightmaps/
 
-      # Download TIN geometry
       - name: Download TIN geometry
         uses: actions/download-artifact@v4
         with:
           name: tin
           path: output/tin/
 
-      # Download low-res grids
       - name: Download low-res grids
         uses: actions/download-artifact@v4
         with:
           name: grids
           path: output/grids_lowres/
 
-      # Download flags
       - name: Download flags
         uses: actions/download-artifact@v4
         with:
           name: flags
           path: output/flags/
 
-      # 6. Convert terrain data → final game chunks
+      - name: Download terrain layers
+        uses: actions/download-artifact@v4
+        with:
+          name: terrain-layers
+          path: output/layers/
+
+      # 7. Package final terrain chunks
       - name: Convert terrain data to game chunks
         run: |
           python scripts/package_chunks.py
 
-      # 7. Upload final terrain chunks
       - name: Upload final terrain chunks
         uses: actions/upload-artifact@v4
         with:
