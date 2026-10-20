@@ -14,7 +14,7 @@ def terrain_rgb_to_height(img: Image.Image) -> np.ndarray:
     g = arr[:, :, 1]
     b = arr[:, :, 2]
 
-    height = (r * 256.0 * 256.0 + g * 256.0 + b) * 0.1 - 10000.0
+    height = (r * 256.0 + g + b / 256.0) - 32768.0
     return height.astype(np.float32)
 
 def main():
