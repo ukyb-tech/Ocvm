@@ -9,83 +9,135 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Checkout repo
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. Install dependencies
       - name: Install Python + libraries
         run: |
           sudo apt-get update
           sudo apt-get install -y python3 python3-pip
-          pip install numpy scipy rasterio shapely trimesh pyyaml pillow
+          pip install numpy scipy rasterio shapely trimesh pyyaml pillow requests
 
-      # 3. Download zoom-11 DEM tiles
-      - name: Download DEM tiles (zoom 11)
+      # 1. Download AWS Terrain-RGB tiles
+      - name: Download DEM tiles (AWS Terrain-RGB)
         run: |
           python scripts/download_dem.py --config config/area_of_interest.json
 
-      # 4. Decode Terrain-RGB → heightmaps
+      # 2. Decode Terrain-RGB → heightmaps
       - name: Decode DEM to heightmaps
         run: |
           python scripts/decode_dem_to_height.py
 
-      # 5. Generate TIN (Triangulated Irregular Network)
+      # 3. Generate TIN geometry
       - name: Generate TIN geometry
         run: |
           python scripts/build_tin.py
 
-      # 6. Downsample heightmaps to low-res grids (32×32 or 64×64)
+      # 4. Downsample heightmaps to low-res grids
       - name: Downsample to low-res grids
         run: |
           python scripts/downsample_grid.py --grid-size 32
 
-      # 7. Compute flat / river / sea flags
+      # 5. Compute flat / river / sea flags
       - name: Compute terrain flags
         run: |
           python scripts/compute_flags.py
 
-      # 8. Export WorldPainter-ready heightmaps + masks
-      - name: Export WorldPainter heightmaps and masks
+      # ⭐ NEW STEP — replaces WorldPainter
+      - name: Generate terrain layers
         run: |
-          python scripts/export_worldpainter_assets.py
+          python scripts/generate_terrain_layers.py
 
-      # 9. Upload WorldPainter assets
-      - name: Upload WorldPainter assets
+      # ⭐ NEW ARTIFACT — replaces WorldPainter inputs
+      - name: Upload terrain layers
         uses: actions/upload-artifact@v4
         with:
-          name: worldpainter-inputs
-          path: output/worldpainter/
+          name: terrain-layers
+          path: output/layers/
+
+      # Upload heightmaps (optional but useful)
+      - name: Upload heightmaps
+        uses: actions/upload-artifact@v4
+        with:
+          name: heightmaps
+          path: output/heightmaps/
+
+      # Upload TIN geometry
+      - name: Upload TIN geometry
+        uses: actions/upload-artifact@v4
+        with:
+          name: tin
+          path: output/tin/
+
+      # Upload low-res grids
+      - name: Upload low-res grids
+        uses: actions/upload-artifact@v4
+        with:
+          name: grids
+          path: output/grids_lowres/
+
+      # Upload flags
+      - name: Upload flags
+        uses: actions/upload-artifact@v4
+        with:
+          name: flags
+          path: output/flags/
 
   terrain-finalize:
     runs-on: ubuntu-latest
     needs: terrain-preprocess
 
     steps:
-      # 1. Checkout repo
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. Install dependencies
       - name: Install Python + libraries
         run: |
           sudo apt-get update
           sudo apt-get install -y python3 python3-pip
           pip install numpy scipy trimesh pyyaml pillow
 
-      # 3. Download WorldPainter export (user uploads it)
-      - name: Download WorldPainter export
+      # Download terrain layers (optional for engine packaging)
+      - name: Download terrain layers
         uses: actions/download-artifact@v4
         with:
-          name: worldpainter-export
-          path: output/worldpainter_export/
+          name: terrain-layers
+          path: output/layers/
 
-      # 4. Convert WorldPainter export → game chunks
-      - name: Convert WorldPainter export to game chunks
+      # Download heightmaps
+      - name: Download heightmaps
+        uses: actions/download-artifact@v4
+        with:
+          name: heightmaps
+          path: output/heightmaps/
+
+      # Download TIN geometry
+      - name: Download TIN geometry
+        uses: actions/download-artifact@v4
+        with:
+          name: tin
+          path: output/tin/
+
+      # Download low-res grids
+      - name: Download low-res grids
+        uses: actions/download-artifact@v4
+        with:
+          name: grids
+          path: output/grids_lowres/
+
+      # Download flags
+      - name: Download flags
+        uses: actions/download-artifact@v4
+        with:
+          name: flags
+          path: output/flags/
+
+      # 6. Convert terrain data → final game chunks
+      - name: Convert terrain data to game chunks
         run: |
           python scripts/package_chunks.py
 
-      # 5. Upload final game terrain assets
+      # 7. Upload final terrain chunks
       - name: Upload final terrain chunks
         uses: actions/upload-artifact@v4
         with:
