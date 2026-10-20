@@ -19,9 +19,9 @@ jobs:
           pip install numpy scipy rasterio shapely trimesh pyyaml pillow requests
 
       # 1. Download AWS Terrain-RGB tiles
-      - name: Download DEM tiles (AWS Terrain-RGB)
+      - name: Download Copernicus DEM tiles
         run: |
-          python scripts/download_dem.py --config config/area_of_interest.json
+         python scripts/download_dem_copernicus.py
 
       # 2. Decode Terrain-RGB → heightmaps
       - name: Decode DEM to heightmaps
