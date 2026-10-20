@@ -1,67 +1,69 @@
 import os
 import numpy as np
-from PIL import Image
+from scipy.ndimage import gaussian_filter, sobel
 
-def ensure_dir(path: str):
+HEIGHT_DIR = "output/heightmaps"
+LAYER_DIR = "output/layers"
+
+def ensure_dir(path):
     os.makedirs(path, exist_ok=True)
 
-def normalize(arr):
-    arr = arr.astype(np.float32)
-    arr = (arr - arr.min()) / (arr.max() - arr.min() + 1e-6)
-    return (arr * 255).astype(np.uint8)
+def generate_layers_for_tile(heightmap_path, out_prefix):
+    h = np.load(heightmap_path).astype(np.float32)
+
+    # Elevation
+    elev = h
+
+    # Slope
+    gy, gx = np.gradient(h)
+    slope = np.sqrt(gx**2 + gy**2)
+
+    # Curvature
+    gyy, gyx = np.gradient(gy)
+    gxy, gxx = np.gradient(gx)
+    curvature = np.abs(gxx + gyy)
+
+    # Roughness (local variance)
+    rough = gaussian_filter((h - h.mean())**2, sigma=1)
+
+    # Hydrology (flow accumulation)
+    flow = np.sqrt(sobel(h, axis=0)**2 + sobel(h, axis=1)**2)
+    rivers = flow < 0.3  # low gradient = water flow
+
+    # Moisture proxy (low slope + low roughness)
+    moisture = gaussian_filter((1 / (1 + slope)) * (1 / (1 + rough)), sigma=2)
+
+    # Terrain classification
+    forest = (moisture > 0.6) & (slope < 15)
+    marsh = (moisture > 0.75) & (slope < 5)
+    mountain = (slope > 25) | (elev > 1800)
+    steppe = (moisture < 0.4) & (rough < 10)
+    desert = (moisture < 0.25) & (rough > 20)
+    tundra = (elev > 1500) & (moisture < 0.4)
+
+    # Save masks
+    np.save(out_prefix + "_forest.npy", forest.astype(np.uint8))
+    np.save(out_prefix + "_marsh.npy", marsh.astype(np.uint8))
+    np.save(out_prefix + "_mountain.npy", mountain.astype(np.uint8))
+    np.save(out_prefix + "_steppe.npy", steppe.astype(np.uint8))
+    np.save(out_prefix + "_desert.npy", desert.astype(np.uint8))
+    np.save(out_prefix + "_tundra.npy", tundra.astype(np.uint8))
+    np.save(out_prefix + "_rivers.npy", rivers.astype(np.uint8))
 
 def main():
-    height_dir = "output/heightmaps"
-    flags_dir = "output/flags"
-    out_dir = "output/layers"
-    ensure_dir(out_dir)
+    ensure_dir(LAYER_DIR)
 
-    # Merge tiles into one big heightmap
-    tiles = []
-    coords = []
-
-    for fname in sorted(os.listdir(height_dir)):
-        if not fname.endswith("_height.npy"):
+    for fname in os.listdir(HEIGHT_DIR):
+        if not fname.endswith(".npy"):
             continue
 
-        parts = fname.split("_")
-        zoom = int(parts[1])
-        x = int(parts[2])
-        y = int(parts[3].split(".")[0])
+        src = os.path.join(HEIGHT_DIR, fname)
+        out_prefix = os.path.join(LAYER_DIR, fname.replace(".npy", ""))
 
-        height = np.load(os.path.join(height_dir, fname))
-        tiles.append(height)
-        coords.append((x, y))
+        print(f"Generating terrain layers for {src}")
+        generate_layers_for_tile(src, out_prefix)
 
-    tile_size = tiles[0].shape[0]
-    max_x = max(c[0] for c in coords)
-    max_y = max(c[1] for c in coords)
-
-    big = np.zeros(((max_y+1)*tile_size, (max_x+1)*tile_size), dtype=np.float32)
-
-    for height, (x, y) in zip(tiles, coords):
-        big[y*tile_size:(y+1)*tile_size, x*tile_size:(x+1)*tile_size] = height
-
-    # Compute masks
-    slope = np.sqrt(np.gradient(big)[0]**2 + np.gradient(big)[1]**2)
-    flatmask = (slope < 0.5).astype(np.uint8) * 255
-    seamask = (big < 0).astype(np.uint8) * 255
-    rivermask = ((big > 0) & (big < 50)).astype(np.uint8) * 255
-
-    # Biome mask (simple placeholder)
-    biomemask = normalize(big)
-
-    # Land type mask (placeholder)
-    landmask = normalize(slope)
-
-    # Save PNGs
-    Image.fromarray(flatmask).save(os.path.join(out_dir, "flatmask.png"))
-    Image.fromarray(seamask).save(os.path.join(out_dir, "seamask.png"))
-    Image.fromarray(rivermask).save(os.path.join(out_dir, "rivermask.png"))
-    Image.fromarray(biomemask).save(os.path.join(out_dir, "biomemask.png"))
-    Image.fromarray(landmask).save(os.path.join(out_dir, "landmask.png"))
-
-    print("Generated terrain layers.")
+    print("Layer generation complete.")
 
 if __name__ == "__main__":
     main()
