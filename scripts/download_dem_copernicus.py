@@ -35,7 +35,7 @@ def main():
 
     # Loop through 5-degree tiles
     for lat in range(MIN_LAT, MAX_LAT + 1, 5):
-        for lon in range(MIN_LON, MAX_LON + 1, 5):
+        for lon in range(MIN_LON, min(MAX_LON, 175) + 1, 5):
 
             name = tile_name(lat, lon)
             url = f"{BUCKET}/{name}"
