@@ -1,1 +1,93 @@
+name: Terrain Build Pipeline
 
+on:
+  workflow_dispatch:
+  
+
+jobs:
+  terrain-preprocess:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Checkout repo
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Install dependencies
+      - name: Install Python + libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3 python3-pip
+          pip install numpy scipy rasterio shapely trimesh pyyaml pillow
+
+      # 3. Download zoom-11 DEM tiles
+      - name: Download DEM tiles (zoom 11)
+        run: |
+          python scripts/download_dem.py --config config/area_of_interest.json
+
+      # 4. Decode Terrain-RGB → heightmaps
+      - name: Decode DEM to heightmaps
+        run: |
+          python scripts/decode_dem_to_height.py
+
+      # 5. Generate TIN (Triangulated Irregular Network)
+      - name: Generate TIN geometry
+        run: |
+          python scripts/build_tin.py
+
+      # 6. Downsample heightmaps to low-res grids (32×32 or 64×64)
+      - name: Downsample to low-res grids
+        run: |
+          python scripts/downsample_grid.py --grid-size 32
+
+      # 7. Compute flat / river / sea flags
+      - name: Compute terrain flags
+        run: |
+          python scripts/compute_flags.py
+
+      # 8. Export WorldPainter-ready heightmaps + masks
+      - name: Export WorldPainter heightmaps and masks
+        run: |
+          python scripts/export_worldpainter_assets.py
+
+      # 9. Upload WorldPainter assets
+      - name: Upload WorldPainter assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: worldpainter-inputs
+          path: output/worldpainter/
+
+  terrain-finalize:
+    runs-on: ubuntu-latest
+    needs: terrain-preprocess
+
+    steps:
+      # 1. Checkout repo
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Install dependencies
+      - name: Install Python + libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3 python3-pip
+          pip install numpy scipy trimesh pyyaml pillow
+
+      # 3. Download WorldPainter export (user uploads it)
+      - name: Download WorldPainter export
+        uses: actions/download-artifact@v4
+        with:
+          name: worldpainter-export
+          path: output/worldpainter_export/
+
+      # 4. Convert WorldPainter export → game chunks
+      - name: Convert WorldPainter export to game chunks
+        run: |
+          python scripts/package_chunks.py
+
+      # 5. Upload final game terrain assets
+      - name: Upload final terrain chunks
+        uses: actions/upload-artifact@v4
+        with:
+          name: game-terrain
+          path: output/game_terrain/
