@@ -4,7 +4,7 @@ import math
 import argparse
 import requests
 
-AWS_TERRAIN_URL = "https://terrain-rgb.s3.amazonaws.com/{z}/{x}/{y}.png"
+AWS_TERRAIN_URL = "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"
 
 def ensure_dir(path: str):
     os.makedirs(path, exist_ok=True)
