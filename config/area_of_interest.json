@@ -1,1 +1,7 @@
-
+{
+  "min_lon": -18.0,
+  "max_lon": 180.0,
+  "min_lat": 0.0,
+  "max_lat": 75.0,
+  "zoom": 11
+}
