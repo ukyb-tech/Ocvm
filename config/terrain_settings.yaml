@@ -1,1 +1,5 @@
-
+grid_size: 32        # low-res grid size (32x32)
+sea_level: 0.0       # meters
+flat_slope_threshold: 0.01
+flat_variance_threshold: 0.5
+river_elevation_max: 50.0
